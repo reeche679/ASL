@@ -1,0 +1,17 @@
+{
+  "name": "sign-language-electron",
+  "version": "1.0.0",
+  "description": "Sign Language Detection Electron App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "electron": "^28.1.0",
+    "python-shell": "^5.0.0"
+  }
+}
