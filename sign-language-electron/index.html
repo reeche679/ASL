@@ -105,12 +105,43 @@
             max-height: 200px;
             overflow-y: auto;
         }
+
+        .controls {
+            margin-bottom: 20px;
+        }
+
+        select {
+            padding: 8px;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+
+        button {
+            padding: 8px 16px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Sign Language Detection</h1>
         
+        <div class="controls">
+            <select id="cameraSelect">
+                <option value="">Loading cameras...</option>
+            </select>
+            <button id="startButton">Start Camera</button>
+        </div>
+
         <div class="video-container">
             <img id="videoFeed" alt="Video Feed">
         </div>
@@ -151,6 +182,7 @@
         const handOrientation = document.getElementById('handOrientation');
         const status = document.getElementById('status');
         const debugInfo = document.getElementById('debugInfo');
+        let selectedCamera = 0;
 
         let frameCount = 0;
         let lastFrameTime = Date.now();
@@ -161,10 +193,34 @@
             debugInfo.textContent = `${timestamp}: ${message}\n${debugInfo.textContent}`;
         }
 
-        ipcRenderer.on('python-message', (event, message) => {
+        // Handle camera list
+        ipcRenderer.on('camera-list', (event, cameras) => {
+            const select = document.getElementById('cameraSelect');
+            select.innerHTML = '';
+            
+            cameras.forEach(camera => {
+                const option = document.createElement('option');
+                option.value = camera.index;
+                option.text = `Camera ${camera.index} (${camera.resolution}, ${camera.fps}fps)`;
+                select.appendChild(option);
+            });
+
+            // Enable the start button
+            document.getElementById('startButton').disabled = false;
+        });
+
+        // Handle camera selection
+        document.getElementById('cameraSelect').addEventListener('change', (e) => {
+            selectedCamera = parseInt(e.target.value);
+        });
+
+        // Handle start button
+        document.getElementById('startButton').addEventListener('click', () => {
+            ipcRenderer.send('select-camera', selectedCamera);
+        });
+
+        ipcRenderer.on('python-message', (event, data) => {
             try {
-                const data = JSON.parse(message);
-                
                 // Update video feed
                 if (data.frame) {
                     videoFeed.src = `data:image/jpeg;base64,${data.frame}`;

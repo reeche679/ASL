@@ -54,122 +54,121 @@ offset = 20
 imgSize = 224
 confidence_threshold = 0.6
 
-# Initialize camera
-print("Attempting to initialize camera...", file=sys.stderr)
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("Error: Could not open camera", file=sys.stderr)
-    # Try alternative camera index
-    cap = cv2.VideoCapture(1)
-    if not cap.isOpened():
-        print("Error: Could not open camera with index 1", file=sys.stderr)
-        sys.exit(1)
-    else:
-        print("Successfully opened camera with index 1", file=sys.stderr)
-else:
-    print("Successfully opened camera with index 0", file=sys.stderr)
+def list_cameras():
+    """List all available cameras"""
+    available_cameras = []
+    for i in range(10):  # Check first 10 indexes
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            ret, _ = cap.read()
+            if ret:
+                # Get camera properties
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                fps = int(cap.get(cv2.CAP_PROP_FPS))
+                available_cameras.append({
+                    'index': i,
+                    'resolution': f"{width}x{height}",
+                    'fps': fps
+                })
+            cap.release()
+    return available_cameras
 
-# Set camera properties
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+def main():
+    # List available cameras
+    cameras = list_cameras()
+    if not cameras:
+        print(json.dumps({"error": "No cameras found"}))
+        return
 
-detector = HandDetector(maxHands=1)
-
-def is_hand_up(lmList, margin=30):
-    wrist_y = lmList[0][1]
-    middle_finger_y = lmList[12][1]
-    index_finger_y = lmList[8][1]
-    return (middle_finger_y < wrist_y - margin) or (index_finger_y < wrist_y - margin)
-
-def is_hand_down(lmList, margin=30):
-    wrist_y = lmList[0][1]
-    middle_finger_y = lmList[12][1]
-    index_finger_y = lmList[8][1]
-    return (middle_finger_y > wrist_y + margin) or (index_finger_y > wrist_y + margin)
-
-print("Starting video capture...", file=sys.stderr)
-
-while True:
-    success, img = cap.read()
-    if not success:
-        print("Error: Could not read from camera", file=sys.stderr)
-        break
-
-    # Flip the image horizontally for a later selfie-view display
-    img = cv2.flip(img, 1)
-    
-    # Convert the image to RGB
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    
-    # Encode the frame
-    frame_encoded = encode_frame(img_rgb)
-    if frame_encoded is None:
-        continue
-    
-    hands, img = detector.findHands(img)
-
-    output_data = {
-        "frame": frame_encoded,
-        "prediction": None,
-        "confidence": 0,
-        "orientation": "Not detected"
-    }
-
-    if hands:
-        hand = hands[0]
-        lmList = hand["lmList"]
-        bbox = hand["bbox"]
-        
-        try:
-            imgCrop = img[max(0, bbox[1]-offset):min(img.shape[0], bbox[1]+bbox[3]+offset),
-                         max(0, bbox[0]-offset):min(img.shape[1], bbox[0]+bbox[2]+offset)]
-            
-            if imgCrop.shape[0] > 0 and imgCrop.shape[1] > 0:
-                imgWhite = np.ones((imgSize, imgSize, 3), np.uint8) * 255
-                imgCropShape = imgCrop.shape
-
-                aspectRatio = imgCrop.shape[0] / imgCrop.shape[1]
-                if aspectRatio > 1:
-                    k = imgSize / imgCrop.shape[0]
-                    imgResize = cv2.resize(imgCrop, (0, 0), None, k, k)
-                    imgResizeShape = imgResize.shape
-                    wGap = math.ceil((imgSize - imgResizeShape[1]) / 2)
-                    imgWhite[0:imgResizeShape[0], wGap:wGap+imgResizeShape[1]] = imgResize
-
-                    img_array = tf.keras.preprocessing.image.img_to_array(imgWhite)
-                    img_array = tf.expand_dims(img_array, 0)
-                    img_array = img_array / 255.0
-
-                    prediction = model.predict(img_array, verbose=0)
-                    
-                    # Detect orientation
-                    is_up = is_hand_up(lmList)
-                    is_down = is_hand_down(lmList)
-                    
-                    # Get the predicted label and confidence
-                    index = np.argmax(prediction[0])
-                    predicted_label = labels[index]
-                    confidence = float(prediction[0][index])
-                    
-                    # Determine orientation
-                    orientation = "UP" if is_up else "DOWN" if is_down else "NEUTRAL"
-                    
-                    # Update output data
-                    output_data.update({
-                        "prediction": predicted_label,
-                        "confidence": confidence,
-                        "orientation": orientation
-                    })
-
-        except Exception as e:
-            print(f"Error processing frame: {e}", file=sys.stderr)
-            continue
-
-    # Print JSON data for Electron to capture
-    print(json.dumps(output_data))
+    # Send camera list to the main process
+    print(json.dumps({"cameras": cameras}))
     sys.stdout.flush()
 
-    time.sleep(0.1)  # Small delay to prevent overwhelming the system
+    # Wait for camera selection from main process
+    selected_camera = 0  # Default to first camera
+    for line in sys.stdin:
+        try:
+            data = json.loads(line)
+            if 'camera_index' in data:
+                selected_camera = int(data['camera_index'])
+                break
+        except json.JSONDecodeError:
+            continue
 
-cap.release()
-cv2.destroyAllWindows() 
+    # Initialize camera
+    cap = cv2.VideoCapture(selected_camera)
+    if not cap.isOpened():
+        print(json.dumps({"error": f"Could not open camera {selected_camera}"}))
+        return
+
+    # Initialize hand detector
+    detector = HandDetector(maxHands=1, detectionCon=0.8)
+
+    while True:
+        success, img = cap.read()
+        if not success:
+            print(json.dumps({"error": "Failed to read frame"}))
+            break
+
+        # Find hands
+        hands, img = detector.findHands(img)
+
+        output_data = {
+            "frame": encode_frame(img),
+            "prediction": None,
+            "confidence": 0,
+            "orientation": "Not detected"
+        }
+
+        if hands:
+            # Get hand landmarks
+            hand = hands[0]
+            landmarks = hand["lmList"]
+            bbox = hand["bbox"]
+            
+            try:
+                imgCrop = img[max(0, bbox[1]-offset):min(img.shape[0], bbox[1]+bbox[3]+offset),
+                             max(0, bbox[0]-offset):min(img.shape[1], bbox[0]+bbox[2]+offset)]
+                
+                if imgCrop.shape[0] > 0 and imgCrop.shape[1] > 0:
+                    imgWhite = np.ones((imgSize, imgSize, 3), np.uint8) * 255
+                    imgCropShape = imgCrop.shape
+
+                    aspectRatio = imgCrop.shape[0] / imgCrop.shape[1]
+                    if aspectRatio > 1:
+                        k = imgSize / imgCrop.shape[0]
+                        imgResize = cv2.resize(imgCrop, (0, 0), None, k, k)
+                        imgResizeShape = imgResize.shape
+                        wGap = math.ceil((imgSize - imgResizeShape[1]) / 2)
+                        imgWhite[0:imgResizeShape[0], wGap:wGap+imgResizeShape[1]] = imgResize
+
+                        img_array = tf.keras.preprocessing.image.img_to_array(imgWhite)
+                        img_array = tf.expand_dims(img_array, 0)
+                        img_array = img_array / 255.0
+
+                        prediction = model.predict(img_array, verbose=0)
+                        
+                        # Get the predicted label and confidence
+                        index = np.argmax(prediction[0])
+                        predicted_label = labels[index]
+                        confidence = float(prediction[0][index])
+
+                        # Update output data
+                        output_data.update({
+                            "prediction": predicted_label,
+                            "confidence": confidence
+                        })
+
+            except Exception as e:
+                print(f"Error processing frame: {e}", file=sys.stderr)
+                continue
+
+        # Send the complete data object
+        print(json.dumps(output_data))
+        sys.stdout.flush()
+
+    cap.release()
+
+if __name__ == "__main__":
+    main() 

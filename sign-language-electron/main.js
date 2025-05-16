@@ -22,7 +22,7 @@ function createWindow() {
 }
 
 function startPythonProcess() {
-  const pythonPath = path.join(__dirname, '..', 'venv310', 'Scripts', 'python.exe');
+  const pythonPath = path.join(__dirname, '..', '.venv', 'Scripts', 'python.exe');
   console.log('Using Python path:', pythonPath);
 
   let options = {
@@ -40,35 +40,72 @@ function startPythonProcess() {
 
     pythonProcess.on('message', function (message) {
       try {
-        // Send message to renderer process
-        mainWindow.webContents.send('python-message', message);
+        const data = JSON.parse(message);
+        
+        // Handle camera list
+        if (data.cameras) {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('camera-list', data.cameras);
+          }
+          return;
+        }
+
+        // Handle errors
+        if (data.error) {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('python-error', data.error);
+          }
+          return;
+        }
+
+        // Handle landmarks and frame data
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('python-message', data);
+        }
       } catch (error) {
         console.error('Error processing message:', error);
-        mainWindow.webContents.send('python-error', `Error processing message: ${error.message}`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('python-error', `Error processing message: ${error.message}`);
+        }
       }
     });
 
     pythonProcess.on('error', function (err) {
       console.error('Python Error:', err);
-      mainWindow.webContents.send('python-error', `Python Error: ${err.message}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('python-error', `Python Error: ${err.message}`);
+      }
     });
 
     pythonProcess.on('stderr', function (stderr) {
       console.error('Python stderr:', stderr);
-      mainWindow.webContents.send('python-error', `Python stderr: ${stderr}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('python-error', `Python stderr: ${stderr}`);
+      }
     });
 
     pythonProcess.on('close', function () {
       console.log('Python process closed');
-      mainWindow.webContents.send('python-closed');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('python-closed');
+      }
       // Restart Python process if it closes unexpectedly
       setTimeout(startPythonProcess, 1000);
     });
   } catch (error) {
     console.error('Failed to start Python process:', error);
-    mainWindow.webContents.send('python-error', `Failed to start Python process: ${error.message}`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('python-error', `Failed to start Python process: ${error.message}`);
+    }
   }
 }
+
+// Handle camera selection
+ipcMain.on('select-camera', (event, cameraIndex) => {
+  if (pythonProcess) {
+    pythonProcess.send(JSON.stringify({ camera_index: cameraIndex }));
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();
