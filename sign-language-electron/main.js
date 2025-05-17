@@ -22,7 +22,7 @@ function createWindow() {
 }
 
 function startPythonProcess() {
-  const pythonPath = path.join(__dirname, '..', '.venv', 'Scripts', 'python.exe');
+  const pythonPath = path.join(__dirname, '..', 'myenv', 'Scripts', 'python.exe');
   console.log('Using Python path:', pythonPath);
 
   let options = {

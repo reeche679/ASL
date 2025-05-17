@@ -31,7 +31,7 @@ def encode_frame(frame):
 # Load the trained model
 try:
     model = tf.keras.models.load_model(
-        "../model/keras_model.h5",
+        "./model/keras_model.h5",
         compile=False,
         custom_objects={'DepthwiseConv2D': CustomDepthwiseConv2D}
     )
@@ -42,7 +42,7 @@ except Exception as e:
 
 # Load labels
 try:
-    with open("../model/labels.txt", "r") as f:
+    with open("./model/labels.txt", "r") as f:
         labels = [line.strip().split()[1] for line in f.readlines()]
     print(f"Labels loaded: {labels}", file=sys.stderr)
 except Exception as e:

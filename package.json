@@ -10,8 +10,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "devDependencies": {
+    "electron": "^28.1.0"
+  },
   "dependencies": {
-    "electron": "^28.3.3",
     "python-shell": "^5.0.0"
   }
-}
+} 
